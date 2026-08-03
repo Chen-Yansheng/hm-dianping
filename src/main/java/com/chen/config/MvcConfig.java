@@ -1,6 +1,6 @@
 package com.chen.config;
 
-import com.chen.utils.LoginInterceptor;
+import com.chen.utils.RefreshTokenInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -16,7 +16,7 @@ public class MvcConfig implements WebMvcConfigurer {
     @Override
     // 实现登录拦截功能.2 配置拦截器
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new LoginInterceptor(stringRedisTemplate))
+        registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate))
                 .excludePathPatterns(
                         "/shop/**",
                         "/voucher/**",
