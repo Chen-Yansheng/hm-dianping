@@ -23,14 +23,14 @@ public class LoginInterceptor implements HandlerInterceptor {
     @Override
     // 实现登录拦截功能.1 拦截器
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        // 1.从请求中获取token
+        // 1.从请求头中获取token
         String token = request.getHeader("authorization");
         if(StrUtil.isBlank(token)){
             response.setStatus(401);
             return false;
         }
 
-        // 2.从redis中获取用户信息
+        // 2.根据token获取Redis中的用户信息
         String key = RedisConstants.LOGIN_USER_KEY + token;
         String userDTOStr = stringRedisTemplate.opsForValue().get(key);
         // 3.判断用户信息是否为空
