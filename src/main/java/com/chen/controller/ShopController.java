@@ -1,6 +1,5 @@
 package com.chen.controller;
 
-
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chen.dto.Result;
@@ -11,14 +10,6 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 
-/**
- * <p>
- * 前端控制器
- * </p>
- *
- * @author 虎哥
- * @since 2021-12-22
- */
 @RestController
 @RequestMapping("/shop")
 public class ShopController {
