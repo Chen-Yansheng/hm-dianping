@@ -46,7 +46,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // 6.去数据库查询
         Shop shop = getById(id);
         if (shop == null) {
-            // 7.数据库中不存在,返回失败
+            // 7.数据库中不存在,缓存空对象,返回失败
+            stringRedisTemplate.opsForValue().set(key, "", RedisConstants.CACHE_NULL_TTL, TimeUnit.MINUTES);
             return Result.fail("店铺不存在");
         }
 
