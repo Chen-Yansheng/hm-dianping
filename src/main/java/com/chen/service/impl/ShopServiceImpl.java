@@ -28,24 +28,31 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String key = RedisConstants.CACHE_SHOP_KEY + id;
         String shopJson = stringRedisTemplate.opsForValue().get(key);
 
-        // 2.存在,直接返回
+        // 2.判断缓存是否命中
         if (StrUtil.isNotBlank(shopJson)) {
-            // 将查询到的数据 从Json字符串类型转为Shop类型
+            // 3.命中(信息为有效数据),直接返回
+            // 将查询到的数据从Json字符串类型转为Shop类型
             Shop shop = JSONUtil.toBean(shopJson, Shop.class);
             return Result.success(shop);
         }
 
-        // 3.不存在,去数据库查询
-        Shop shop = getById(id);
-        // 4.数据库中不存在,返回失败
-        if (shop == null) {
+        // 4.判断是否为""(缓存空对象)
+        // 此时 shopJson 只有两种可能: null → key不存在,没缓存过; "" → 缓存了的空对象
+        if (shopJson != null) {
+            // 5."" → 缓存了的空对象,返回失败  (不用.equals判断,是因为shopJson可能是null,报空指针异常;如果先判断是否为空,那equals就多此一举了)
             return Result.fail("店铺不存在");
         }
 
-        // 5.存在,写入Redis,设置过期时间
+        // 6.去数据库查询
+        Shop shop = getById(id);
+        if (shop == null) {
+            // 7.数据库中不存在,返回失败
+            return Result.fail("店铺不存在");
+        }
+
+        // 8.存在,写入Redis,设置过期时间
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop), RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
-        // 6.返回
         return Result.success(shop);
     }
 
