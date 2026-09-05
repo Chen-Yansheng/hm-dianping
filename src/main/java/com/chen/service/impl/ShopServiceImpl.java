@@ -191,6 +191,23 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         return Result.success(shop);
     }
 
+    /**
+     * 逻辑过期方案 - 缓存预热
+     * @param id 商铺id
+     * @param expireTime 过期时间,单位秒
+     */
+    @Override
+    public void setWithLogicExpire(Long id, Long expireTime) {
+        // 查询数据库
+        Shop newShop = getById(id);
+        // 将数据转为RedisData类型
+        RedisData newRedisData = new RedisData();
+        newRedisData.setData(JSONUtil.toJsonStr(newShop));
+        newRedisData.setExpireTime(LocalDateTime.now().plusSeconds(expireTime));
+        // 写入Redis
+        stringRedisTemplate.opsForValue().set(RedisConstants.CACHE_SHOP_KEY + id, JSONUtil.toJsonStr(newRedisData));
+    }
+
     @Override
     public Result update(Shop shop) {
         // 1.判断店铺是否存在
