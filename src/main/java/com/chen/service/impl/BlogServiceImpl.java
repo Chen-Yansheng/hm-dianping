@@ -5,25 +5,31 @@ import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.chen.dto.Result;
+import com.chen.dto.ScrollResult;
 import com.chen.dto.UserDTO;
 import com.chen.entity.Blog;
+import com.chen.entity.Follow;
 import com.chen.entity.User;
 import com.chen.mapper.BlogMapper;
 import com.chen.service.IBlogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.chen.service.IFollowService;
 import com.chen.service.IUserService;
 import com.chen.utils.SystemConstants;
 import com.chen.utils.ThreadLocalUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.chen.utils.RedisConstants.BLOG_LIKED_KEY;
+import static com.chen.utils.RedisConstants.FEED_KEY;
 
 
 @Service
@@ -31,6 +37,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     @Resource
     private IUserService userService;
+
+    @Resource
+    private IFollowService followService;
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
@@ -136,5 +145,75 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
                 .collect(Collectors.toList());
         // 4.返回
         return Result.success(userDTOS);
+    }
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        // 1.获取登录用户
+        Long authorId = ThreadLocalUtils.getUser().getId();
+        // 2.设置博客作者
+        blog.setUserId(authorId);
+        // 3.保存博客
+        boolean isSuccess = save(blog);
+        if(!isSuccess){
+            return Result.fail("保存博客失败");
+        }
+        // 4.推送博客到粉丝    select * from tb_follow where follow_user_id = ?
+        List<Follow> follows = followService.query().eq("follow_user_id", authorId).list();
+        for(Follow follow : follows){
+            Long fanId = follow.getUserId();
+            String key = FEED_KEY + fanId;
+            stringRedisTemplate.opsForZSet().add(key, blog.getId().toString(), System.currentTimeMillis());
+        }
+        // 5.返回id
+        return Result.success(blog.getId());
+    }
+
+    @Override
+    public Result queryBlogOfFollow(Long max, Integer offset) {
+        // 1.获取当前用户
+        Long userId = ThreadLocalUtils.getUser().getId();
+        // 2.查询收件箱 ZREVRANGEBYSCORE key Max Min LIMIT offset count
+        String key = FEED_KEY + userId;
+        Set<ZSetOperations.TypedTuple<String>> typedTuples = stringRedisTemplate.opsForZSet()
+            .reverseRangeByScoreWithScores(key, 0, max, offset, 2);
+        // 3.非空判断
+        if (typedTuples == null || typedTuples.isEmpty()) {
+            return Result.success();
+        }
+        // 4.解析数据：blogId、minTime（时间戳）、offset
+        List<Long> ids = new ArrayList<>(typedTuples.size());
+        long minTime = 0;   // 本次结果中最早的时间戳
+        int os = 1;     // 偏移量（处理同一时间戳）
+        for (ZSetOperations.TypedTuple<String> tuple : typedTuples) { // 例5 4 4 2 2
+            // 4.1.获取id
+            ids.add(Long.valueOf(tuple.getValue()));
+            // 4.2.获取分数(时间戳）
+            long time = tuple.getScore().longValue();
+            if(time == minTime){
+                os++;   // 同时间戳，偏移量 +1
+            }else{
+                minTime = time;
+                os = 1; // 遇到更早的时间戳，重置偏移量
+            }
+        }
+        // 5.根据id查询blog
+        String idStr = StrUtil.join(",", ids);
+        List<Blog> blogs = query().in("id", ids).last("ORDER BY FIELD(id," + idStr + ")").list();
+
+        for (Blog blog : blogs) {
+            // 5.1.查询blog有关的用户
+            fillBlogUserInfo(blog);
+            // 5.2.查询blog是否被点赞
+            fillBlogLikeStatus(blog);
+        }
+
+        // 6.封装并返回
+        ScrollResult r = new ScrollResult();
+        r.setList(blogs);
+        r.setOffset(os);
+        r.setMinTime(minTime);
+
+        return Result.success(r);
     }
 }
