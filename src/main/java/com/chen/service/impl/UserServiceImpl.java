@@ -13,15 +13,22 @@ import com.chen.mapper.UserMapper;
 import com.chen.service.IUserService;
 import com.chen.utils.RedisConstants;
 import com.chen.utils.SystemConstants;
+import com.chen.utils.ThreadLocalUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import com.chen.utils.RegexUtils;
 
 import javax.servlet.http.HttpSession;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import static com.chen.utils.RedisConstants.USER_SIGN_KEY;
 
 @Slf4j
 @Service
@@ -94,5 +101,53 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         // user.setCreateTime();
         save(user);
         return user;
+    }
+
+    @Override
+    public Result sign() {
+        // 1.获取当前登录用户id
+        Long userId = ThreadLocalUtils.getUser().getId();
+        // 2.获取日期
+        LocalDateTime now = LocalDateTime.now();
+        // 3.拼接key
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+        // 4.写入Redis SETBIT key offset 1
+        int dayOfMonth = now.getDayOfMonth();
+        stringRedisTemplate.opsForValue().setBit(key, dayOfMonth - 1, true);
+        return Result.success();
+    }
+
+    @Override
+    public Result signCount() {
+        // 1.获取当前登录用户id
+        Long userId = ThreadLocalUtils.getUser().getId();
+        // 2.获取日期
+        LocalDateTime now = LocalDateTime.now();
+        // 3.拼接key
+        String keySuffix = now.format(DateTimeFormatter.ofPattern(":yyyyMM"));
+        String key = USER_SIGN_KEY + userId + keySuffix;
+        // 4.获取本月截止今天的签到数据，返回的是一个十进制数
+        int dayOfMonth = now.getDayOfMonth();
+        List<Long> signData = stringRedisTemplate.opsForValue().bitField(
+                key,
+                BitFieldSubCommands.create().get(BitFieldSubCommands.BitFieldType.unsigned(dayOfMonth)).valueAt(0)
+        );
+        if(signData == null || signData.isEmpty()){
+            // 没有任何签到结果
+            return Result.success(0);
+        }
+        Long num = signData.get(0);
+        if (num == null || num == 0) {
+            return Result.success(0);
+        }
+        // 5.循环遍历签到数据，统计1的个数，即签到次数
+        // 签到数据与1进行与操作，判断是否为1，再右移。
+        int signCount = 0;
+        while ((num & 1) == 1) {
+            signCount++;
+            num >>>= 1;
+        }
+        return Result.success(signCount);
     }
 }
